@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from mfrc522 import SimpleMFRC522
+import RPi.GPIO as GPIO
 
 reader = SimpleMFRC522()
 
@@ -19,3 +20,4 @@ except KeyboardInterrupt:
 
 finally:
     reader.cleanup()
+    GPIO.cleanup()
