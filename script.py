@@ -52,6 +52,22 @@ TOKEN_URL = "https://accounts.spotify.com/api/token"
 reader = SimpleMFRC522()
 
 
+def flash_led(duration=0.2, count=2):
+    """Flash the MFRC522 reader's LED."""
+    try:
+        for _ in range(count):
+            # Turn LED on (set antenna gain to maximum)
+            reader.MFRC522_AntennaGain(reader.ANTENNA_MAX_GAIN)
+            time.sleep(duration)
+            # Turn LED off
+            reader.MFRC522_AntennaGain(0)
+            time.sleep(duration)
+        # Restore antenna to normal
+        reader.MFRC522_AntennaGain(reader.ANTENNA_MAX_GAIN)
+    except Exception as e:
+        print(f"Warning: Could not flash LED: {e}")
+
+
 def uid_to_str(uid_tuple):
     """Convert uid tuple/list to a single integer string (common style)."""
     return "".join(str(x) for x in uid_tuple)
@@ -145,6 +161,9 @@ def main_loop():
             # id is integer, but sometimes MFRC522 returns tuple — adapt
             uid_str = str(id)
             print(f"Tag read: {uid_str}")
+
+            # Flash LED to indicate tag was read
+            flash_led()
 
             if uid_str in TAG_MAP:
                 spotify_uri = TAG_MAP[uid_str]
