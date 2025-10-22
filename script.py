@@ -12,6 +12,10 @@ import time
 import base64
 import requests
 from mfrc522 import SimpleMFRC522
+import sys
+
+sys.stdout.reconfigure(line_buffering=True)
+
 
 # ---------- CONFIG ----------
 CLIENT_ID = "your_spotify_client_id"
