@@ -3,9 +3,6 @@
 rfid_spotify.py
 - Reads RFID tags (MFRC522)
 - Maps tag UID -> Spotify URI and triggers playback on a Spotify Connect device.
-
-Requires:
-pip3 install mfrc522 requests
 """
 
 import time
@@ -13,18 +10,27 @@ import base64
 import requests
 from mfrc522 import SimpleMFRC522
 import sys
+import os
+from dotenv import load_dotenv
 
 sys.stdout.reconfigure(line_buffering=True)
 
+# Load environment variables from .env file
+load_dotenv()
 
 # ---------- CONFIG ----------
-CLIENT_ID = "your_spotify_client_id"
-CLIENT_SECRET = "your_spotify_client_secret"
-REFRESH_TOKEN = "your_saved_refresh_token"
+CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+REFRESH_TOKEN = os.getenv("SPOTIFY_REFRESH_TOKEN")
+TARGET_DEVICE_NAME = os.getenv("SPOTIFY_TARGET_DEVICE")
 
-# Name of the Spotify Connect device you want to play to
-# Script will automatically find the device ID by this name
-TARGET_DEVICE_NAME = "your_target_device_name"
+# Validate required config
+if not all([CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN, TARGET_DEVICE_NAME]):
+    print("ERROR: Missing required environment variables in .env file")
+    print(
+        "Required: SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_REFRESH_TOKEN, SPOTIFY_TARGET_DEVICE"
+    )
+    sys.exit(1)
 
 # Current device ID (will be populated at startup)
 DEVICE_ID = None
@@ -156,12 +162,18 @@ def main_loop():
                     status_code, _ = info
                     # Handle 404 device not found
                     if status_code == 404:
-                        print("Device not found (404). Refreshing device list and retrying...")
+                        print(
+                            "Device not found (404). Refreshing device list and retrying..."
+                        )
                         try:
-                            DEVICE_ID = find_device_id_by_name(access_token, TARGET_DEVICE_NAME)
+                            DEVICE_ID = find_device_id_by_name(
+                                access_token, TARGET_DEVICE_NAME
+                            )
                             if DEVICE_ID:
                                 print(f"Found device, retrying with ID: {DEVICE_ID}")
-                                ok, info = start_playback(access_token, spotify_uri, DEVICE_ID)
+                                ok, info = start_playback(
+                                    access_token, spotify_uri, DEVICE_ID
+                                )
                             else:
                                 print("Could not find target device after refresh.")
                         except Exception as e:
@@ -172,7 +184,9 @@ def main_loop():
                         print("Attempting to refresh access token and retry...")
                         try:
                             access_token, _ = refresh_access_token()
-                            ok, info = start_playback(access_token, spotify_uri, DEVICE_ID)
+                            ok, info = start_playback(
+                                access_token, spotify_uri, DEVICE_ID
+                            )
                         except Exception as e:
                             print("Error refreshing token:", e)
 
