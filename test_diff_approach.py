@@ -11,6 +11,9 @@ LED_PIN = 18
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(LED_PIN, GPIO.OUT)
 
+GPIO.setwarnings(False)
+
+
 reader = MFRC522()
 
 
