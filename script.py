@@ -54,8 +54,7 @@ TOKEN_URL = "https://accounts.spotify.com/api/token"
 
 reader = SimpleMFRC522()
 
-LED_PIN = 24
-GPIO.setmode(GPIO.BCM)
+LED_PIN = 18
 GPIO.setup(LED_PIN, GPIO.OUT)
 
 
