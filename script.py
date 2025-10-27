@@ -2,7 +2,8 @@
 """
 rfid_spotify.py
 - Reads RFID tags (MFRC522)
-- Maps tag UID -> Spotify URI and triggers playback on a Spotify Connect device.
+- Master tag puts system in write mode to program album URIs onto tags
+- Regular tags store and play album URIs from their text field
 """
 
 import time
@@ -13,7 +14,7 @@ import sys
 import os
 from dotenv import load_dotenv
 import RPi.GPIO as GPIO
-import time
+import threading
 
 sys.stdout.reconfigure(line_buffering=True)
 
@@ -37,15 +38,8 @@ if not all([CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN, TARGET_DEVICE_NAME]):
 # Current device ID (will be populated at startup)
 DEVICE_ID = None
 
-# Map RFID UID (string) -> Spotify URI (track/album/playlist/artist)
-# Example UID format used below is '12345678' (it's joined decimal from bytes)
-TAG_MAP = {
-    "732283830995": "spotify:album:6jbtHi5R0jMXoliU2OS0lo",
-    "847216211447": "spotify:album:316O0Xetgx2NJLRgJBw4uq",
-    "926375589018": "spotify:album:4CZCMvnmbjR6FkOAhzgmg3",
-    "539431371257": "spotify:album:6hPt04r4KtO00nwhdGJ8Ox",
-    "588394784912": "spotify:album:5RUma3H9uzDLXxwT7JzTel",
-}
+# Master tag identifier (written to tag with write_master_tag.py)
+MASTER_TAG_ID = "MASTER_TAG"
 
 # Token endpoint details
 TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -75,6 +69,24 @@ def flash_led_repeatedly(duration=5, rate=0.3):
         time.sleep(rate)
         GPIO.output(LED_PIN, GPIO.LOW)
         time.sleep(rate)
+
+
+class WriteModeFlasher(threading.Thread):
+    """Flash LED while waiting for tag write, stop when signaled."""
+    def __init__(self, rate=0.3):
+        super().__init__(daemon=True)
+        self.rate = rate
+        self.stop_event = threading.Event()
+
+    def run(self):
+        while not self.stop_event.is_set():
+            GPIO.output(LED_PIN, GPIO.HIGH)
+            time.sleep(self.rate)
+            GPIO.output(LED_PIN, GPIO.LOW)
+            time.sleep(self.rate)
+
+    def stop(self):
+        self.stop_event.set()
 
 
 def uid_to_str(uid_tuple):
@@ -148,6 +160,30 @@ def find_device_id_by_name(access_token, target_name):
     return None
 
 
+def get_currently_playing(access_token):
+    """Get the currently playing track and return its album URI. Returns None if nothing playing or album unavailable."""
+    url = "https://api.spotify.com/v1/me/player/currently-playing"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        r = requests.get(url, headers=headers, timeout=5)
+        if r.status_code == 204:
+            print("Nothing currently playing")
+            return None
+        r.raise_for_status()
+        data = r.json()
+        if data and data.get("item") and data["item"].get("album"):
+            album_uri = data["item"]["album"]["uri"]
+            album_name = data["item"]["album"]["name"]
+            print(f"Currently playing album: {album_name}")
+            return album_uri
+        else:
+            print("No album found in currently playing track")
+            return None
+    except Exception as e:
+        print(f"Error getting currently playing: {e}")
+        return None
+
+
 def main_loop():
     global DEVICE_ID
 
@@ -163,67 +199,113 @@ def main_loop():
         print(f"ERROR: Could not find target device '{TARGET_DEVICE_NAME}'.")
         return
 
+    write_mode = False
+    pending_album_uri = None
+
     try:
         while True:
-            print("Waiting for tag... (press Ctrl+C to quit)")
-            id, text = reader.read()  # this blocks until a tag is read
-            # id is integer, but sometimes MFRC522 returns tuple — adapt
-            uid_str = str(id)
-            print(f"Tag read: {uid_str}")
+            if write_mode:
+                print("WRITE MODE: Present tag to write album (10 second timeout)...")
+                print(f"Writing album URI to tag: {pending_album_uri}")
 
-            if uid_str in TAG_MAP:
-                flash_led(2, 0.1)
-                spotify_uri = TAG_MAP[uid_str]
-                print(f"Mapped to {spotify_uri}. Triggering playback...")
+                # Start flashing LED in background thread
+                flasher = WriteModeFlasher(rate=0.3)
+                flasher.start()
 
-                # attempt playback, refresh token on unauthorized
+                # Try to write with 10 second timeout
+                write_success = False
                 try:
-                    ok, info = start_playback(access_token, spotify_uri, DEVICE_ID)
-                except requests.HTTPError as e:
-                    print("HTTP error while sending play command:", e)
-                    ok = False
-                    info = e
+                    reader.write(pending_album_uri)
+                    write_success = True
+                    print("✓ Album written to tag successfully")
+                except Exception as e:
+                    print(f"Error writing to tag: {e}")
+                finally:
+                    # Stop flashing
+                    flasher.stop()
+                    flasher.join(timeout=1)
 
-                if not ok:
-                    status_code, _ = info
-                    # Handle 404 device not found
-                    if status_code == 404:
-                        print(
-                            "Device not found (404). Refreshing device list and retrying..."
-                        )
-                        try:
-                            DEVICE_ID = find_device_id_by_name(
-                                access_token, TARGET_DEVICE_NAME
+                # Flash success pattern if write succeeded
+                if write_success:
+                    flash_led(3, 0.1)
+
+                write_mode = False
+                pending_album_uri = None
+                time.sleep(1.0)
+            else:
+                print("Waiting for tag... (press Ctrl+C to quit)")
+                id, text = reader.read()  # this blocks until a tag is read
+                uid_str = str(id)
+                print(f"Tag read: {uid_str}, text: {text}")
+
+                if text == MASTER_TAG_ID:
+                    # Master tag detected - enter write mode
+                    flash_led(2, 0.1)
+                    print("Master tag detected. Entering write mode...")
+
+                    album_uri = get_currently_playing(access_token)
+                    if album_uri:
+                        write_mode = True
+                        pending_album_uri = album_uri
+                        flash_led_repeatedly(5, 0.3)
+                        print("Ready to write to next tag presented")
+                    else:
+                        print("Cannot enter write mode - nothing playing or no album available")
+                    time.sleep(1.0)
+                elif text and text.startswith("spotify:album:"):
+                    # Regular tag with album URI - trigger playback
+                    flash_led(2, 0.1)
+                    spotify_uri = text
+                    print(f"Album URI: {spotify_uri}. Triggering playback...")
+
+                    # attempt playback, refresh token on unauthorized
+                    try:
+                        ok, info = start_playback(access_token, spotify_uri, DEVICE_ID)
+                    except requests.HTTPError as e:
+                        print("HTTP error while sending play command:", e)
+                        ok = False
+                        info = e
+
+                    if not ok:
+                        status_code, _ = info
+                        # Handle 404 device not found
+                        if status_code == 404:
+                            print(
+                                "Device not found (404). Refreshing device list and retrying..."
                             )
-                            if DEVICE_ID:
-                                print(f"Found device, retrying with ID: {DEVICE_ID}")
+                            try:
+                                DEVICE_ID = find_device_id_by_name(
+                                    access_token, TARGET_DEVICE_NAME
+                                )
+                                if DEVICE_ID:
+                                    print(f"Found device, retrying with ID: {DEVICE_ID}")
+                                    ok, info = start_playback(
+                                        access_token, spotify_uri, DEVICE_ID
+                                    )
+                                else:
+                                    print("Could not find target device after refresh.")
+                            except Exception as e:
+                                print("Error refreshing device list:", e)
+
+                        # If still not ok, try refreshing token
+                        if not ok:
+                            print("Attempting to refresh access token and retry...")
+                            try:
+                                access_token, _ = refresh_access_token()
                                 ok, info = start_playback(
                                     access_token, spotify_uri, DEVICE_ID
                                 )
-                            else:
-                                print("Could not find target device after refresh.")
-                        except Exception as e:
-                            print("Error refreshing device list:", e)
+                            except Exception as e:
+                                print("Error refreshing token:", e)
 
-                    # If still not ok, try refreshing token
-                    if not ok:
-                        print("Attempting to refresh access token and retry...")
-                        try:
-                            access_token, _ = refresh_access_token()
-                            ok, info = start_playback(
-                                access_token, spotify_uri, DEVICE_ID
-                            )
-                        except Exception as e:
-                            print("Error refreshing token:", e)
-
-                if ok:
-                    print("Playback triggered.")
+                    if ok:
+                        print("Playback triggered.")
+                    else:
+                        print("Failed to start playback:", info)
+                    time.sleep(1.0)
                 else:
-                    print("Failed to start playback:", info)
-            else:
-                print("Unknown tag. UID:", uid_str)
-            # small delay to avoid reading same tag repeatedly
-            time.sleep(1.0)
+                    print(f"Unknown tag content: {text}")
+                    time.sleep(1.0)
 
     except KeyboardInterrupt:
         print("Exiting")
