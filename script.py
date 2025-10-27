@@ -205,29 +205,31 @@ def main_loop():
     try:
         while True:
             if write_mode:
-                print("WRITE MODE: Present tag to write album (10 second timeout)...")
+                print("WRITE MODE: Present tag to write album...")
                 print(f"Writing album URI to tag: {pending_album_uri}")
 
                 # Start flashing LED in background thread
                 flasher = WriteModeFlasher(rate=0.3)
                 flasher.start()
 
-                # Try to write with 10 second timeout
+                # Keep trying to write until successful
                 write_success = False
                 try:
-                    reader.write(pending_album_uri)
-                    write_success = True
-                    print("✓ Album written to tag successfully")
-                except Exception as e:
-                    print(f"Error writing to tag: {e}")
+                    while not write_success:
+                        try:
+                            reader.write(pending_album_uri)
+                            write_success = True
+                            print("✓ Album written to tag successfully")
+                        except Exception as e:
+                            print(f"Error writing to tag: {e}. Try again...")
+                            time.sleep(0.5)
                 finally:
                     # Stop flashing
                     flasher.stop()
                     flasher.join(timeout=1)
 
-                # Flash success pattern if write succeeded
-                if write_success:
-                    flash_led(3, 0.1)
+                # Flash success pattern
+                flash_led(3, 0.1)
 
                 write_mode = False
                 pending_album_uri = None
