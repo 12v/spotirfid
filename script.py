@@ -238,6 +238,9 @@ def main_loop():
                 uid_str = str(id)
                 print(f"Tag read: {uid_str}, text: {text}")
 
+                # Normalize text for comparison (strip whitespace)
+                text = text.strip() if isinstance(text, str) else text
+
                 if text == MASTER_TAG_ID:
                     # Master tag detected - enter write mode
                     flash_led(2, 0.1)
