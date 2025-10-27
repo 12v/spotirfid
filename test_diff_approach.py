@@ -10,7 +10,6 @@ from pirc522 import RFID
 
 # Configuration
 LED_PIN = 18
-GPIO.setmode(GPIO.BCM)
 GPIO.setup(LED_PIN, GPIO.OUT)
 
 # Initialize RFID reader without IRQ pin
