@@ -4,7 +4,7 @@ Test script using nfcpy with MFRC522 SPI reader for NFC 213 tags.
 """
 
 import nfc
-from ndef import NdefMessage, TextRecord
+from ndef import TextRecord
 
 def test_write():
     clf = None
@@ -28,7 +28,7 @@ def test_write():
         print(f"\nWriting: '{test_text}'")
 
         # Create NDEF message with text record
-        message = NdefMessage(TextRecord(test_text))
+        message = [TextRecord(test_text)]
         tag.ndef.message = message
 
         print("✓ Write succeeded")
