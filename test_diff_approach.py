@@ -16,6 +16,7 @@ rdr = RFID(pin_irq=None)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(LED_PIN, GPIO.OUT)
 
+
 def poll_for_tag():
     """Poll continuously until a tag is detected and return its UID"""
     while True:
@@ -26,10 +27,11 @@ def poll_for_tag():
                 return uid
         time.sleep(0.2)
 
+
 def write_ntag213(tag_data, max_retries=3):
     """Write string to NTAG213 starting at page 4"""
     data_bytes = [ord(c) for c in tag_data]
-    pages = [data_bytes[i:i+4] for i in range(0, len(data_bytes), 4)]
+    pages = [data_bytes[i : i + 4] for i in range(0, len(data_bytes), 4)]
     for i in range(len(pages)):
         if len(pages[i]) < 4:
             pages[i] += [0x00] * (4 - len(pages[i]))
@@ -62,3 +64,27 @@ def write_ntag213(tag_data, max_retries=3):
             page_num = 4 + idx
             error, page = rdr.read(page_num)
             if error:
+                print(f"✗ Failed reading page {page_num}")
+                success = False
+                break
+            read_back.extend(page)
+
+        read_text = "".join([chr(b) for b in read_back]).rstrip("\x00")
+        print("Read back:", read_text)
+
+        if read_text == tag_data:
+            print("✓ SUCCESS: Data verified")
+            GPIO.output(LED_PIN, GPIO.HIGH)
+            return True
+        else:
+            print("✗ Verification failed, retrying...")
+            time.sleep(1)
+
+    print("✗ All attempts failed")
+    return False
+
+
+try:
+    write_ntag213("TEST_DATA")
+finally:
+    GPIO.cleanup()
