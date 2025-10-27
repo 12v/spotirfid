@@ -14,6 +14,7 @@ import sys
 import os
 from dotenv import load_dotenv
 import RPi.GPIO as GPIO
+import json
 
 sys.stdout.reconfigure(line_buffering=True)
 
@@ -43,12 +44,40 @@ MASTER_TAG_ID = "MASTER_TAG"
 # Token endpoint details
 TOKEN_URL = "https://accounts.spotify.com/api/token"
 
+# Tag map file path
+TAG_MAP_FILE = "tag_map.json"
+TAG_MAP = {}
+
 # ----------------------------
 
 reader = SimpleMFRC522()
 
 LED_PIN = 18
 GPIO.setup(LED_PIN, GPIO.OUT)
+
+
+def load_tag_map():
+    """Load tag ID to Spotify URI mapping from file."""
+    global TAG_MAP
+    try:
+        with open(TAG_MAP_FILE, "r") as f:
+            TAG_MAP = json.load(f)
+        print(f"Loaded tag map with {len(TAG_MAP)} entries")
+    except FileNotFoundError:
+        print(f"Tag map file not found ({TAG_MAP_FILE}), starting with empty map")
+        TAG_MAP = {}
+    except json.JSONDecodeError:
+        print(f"Error decoding tag map file, starting with empty map")
+        TAG_MAP = {}
+
+
+def save_tag_map():
+    """Save tag ID to Spotify URI mapping to file."""
+    try:
+        with open(TAG_MAP_FILE, "w") as f:
+            json.dump(TAG_MAP, f, indent=2)
+    except Exception as e:
+        print(f"Error saving tag map: {e}")
 
 
 def flash_led(times=1, delay=0.2):
@@ -159,6 +188,7 @@ def main_loop():
     global DEVICE_ID
 
     print("Starting RFID -> Spotify bridge")
+    load_tag_map()
     access_token, _ = refresh_access_token()
     print("Got access token (will refresh automatically if error occurs).")
 
@@ -176,33 +206,26 @@ def main_loop():
     try:
         while True:
             if write_mode:
-                print("WRITE MODE: Present tag to write album...")
-                print(f"Writing album URI to tag: {pending_album_uri}")
+                print("WRITE MODE: Present tag to map...")
+                print(f"Album URI to map: {pending_album_uri}")
+                GPIO.output(LED_PIN, GPIO.HIGH)
 
                 write_success = False
                 while not write_success:
                     try:
-                        flash_led(1, 0.1)  # Flash while waiting
-                        id, text = reader.read()
-                        text = text.strip() if isinstance(text, str) else text
+                        tag_id, text = reader.read()
+                        uid_str = str(tag_id)
 
-                        # Try to write to the tag
-                        reader.write(pending_album_uri)
+                        # Map tag ID to album URI
+                        TAG_MAP[uid_str] = pending_album_uri
+                        save_tag_map()
 
-                        # Verify write by reading back
-                        id, text = reader.read()
-                        text = text.strip() if isinstance(text, str) else text
-
-                        if text == pending_album_uri:
-                            write_success = True
-                            print("✓ Album written to tag successfully")
-                            flash_led(3, 0.1)
-                            GPIO.output(LED_PIN, GPIO.LOW)
-                        else:
-                            print(f"Write verification failed. Retrying...")
+                        write_success = True
+                        print(f"✓ Tag {uid_str} mapped to album successfully")
                     except Exception as e:
                         print(f"Error: {e}. Try again...")
 
+                GPIO.output(LED_PIN, GPIO.LOW)
                 write_mode = False
                 pending_album_uri = None
                 time.sleep(1.0)
@@ -229,10 +252,10 @@ def main_loop():
                     else:
                         print("Cannot enter write mode - nothing playing or no album available")
                     time.sleep(1.0)
-                elif text and text.startswith("spotify:album:"):
-                    # Regular tag with album URI - trigger playback
+                elif uid_str in TAG_MAP:
+                    # Tag ID found in map - trigger playback
                     flash_led(2, 0.1)
-                    spotify_uri = text
+                    spotify_uri = TAG_MAP[uid_str]
                     print(f"Album URI: {spotify_uri}. Triggering playback...")
 
                     # attempt playback, refresh token on unauthorized
@@ -281,7 +304,7 @@ def main_loop():
                         print("Failed to start playback:", info)
                     time.sleep(1.0)
                 else:
-                    print(f"Unknown tag content: {text}")
+                    print(f"Unknown tag (not in map): {uid_str}")
                     time.sleep(1.0)
 
     except KeyboardInterrupt:
@@ -294,5 +317,4 @@ def main_loop():
 
 
 if __name__ == "__main__":
-    # Optionally load TAG_MAP from a file, environment, etc.
     main_loop()
