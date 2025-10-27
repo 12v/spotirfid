@@ -14,7 +14,6 @@ import sys
 import os
 from dotenv import load_dotenv
 import RPi.GPIO as GPIO
-import threading
 
 sys.stdout.reconfigure(line_buffering=True)
 
@@ -59,34 +58,6 @@ def flash_led(times=1, delay=0.2):
         time.sleep(delay)
         GPIO.output(LED_PIN, GPIO.LOW)
         time.sleep(delay)
-
-
-def flash_led_repeatedly(duration=5, rate=0.3):
-    """Flash LED repeatedly for duration seconds (write/program mode indicator)."""
-    end_time = time.time() + duration
-    while time.time() < end_time:
-        GPIO.output(LED_PIN, GPIO.HIGH)
-        time.sleep(rate)
-        GPIO.output(LED_PIN, GPIO.LOW)
-        time.sleep(rate)
-
-
-class WriteModeFlasher(threading.Thread):
-    """Flash LED while waiting for tag write, stop when signaled."""
-    def __init__(self, rate=0.3):
-        super().__init__(daemon=True)
-        self.rate = rate
-        self.stop_event = threading.Event()
-
-    def run(self):
-        while not self.stop_event.is_set():
-            GPIO.output(LED_PIN, GPIO.HIGH)
-            time.sleep(self.rate)
-            GPIO.output(LED_PIN, GPIO.LOW)
-            time.sleep(self.rate)
-
-    def stop(self):
-        self.stop_event.set()
 
 
 def uid_to_str(uid_tuple):
@@ -208,28 +179,29 @@ def main_loop():
                 print("WRITE MODE: Present tag to write album...")
                 print(f"Writing album URI to tag: {pending_album_uri}")
 
-                # Start flashing LED in background thread
-                flasher = WriteModeFlasher(rate=0.3)
-                flasher.start()
-
-                # Keep trying to write until successful
                 write_success = False
-                try:
-                    while not write_success:
-                        try:
-                            reader.write(pending_album_uri)
+                while not write_success:
+                    try:
+                        flash_led(1, 0.1)  # Flash while waiting
+                        id, text = reader.read()
+                        text = text.strip() if isinstance(text, str) else text
+
+                        # Try to write to the tag
+                        reader.write(pending_album_uri)
+
+                        # Verify write by reading back
+                        id, text = reader.read()
+                        text = text.strip() if isinstance(text, str) else text
+
+                        if text == pending_album_uri:
                             write_success = True
                             print("✓ Album written to tag successfully")
-                        except Exception as e:
-                            print(f"Error writing to tag: {e}. Try again...")
-                            time.sleep(0.5)
-                finally:
-                    # Stop flashing
-                    flasher.stop()
-                    flasher.join(timeout=1)
-
-                # Flash success pattern
-                flash_led(3, 0.1)
+                            flash_led(3, 0.1)
+                            GPIO.output(LED_PIN, GPIO.LOW)
+                        else:
+                            print(f"Write verification failed. Retrying...")
+                    except Exception as e:
+                        print(f"Error: {e}. Try again...")
 
                 write_mode = False
                 pending_album_uri = None
@@ -252,7 +224,7 @@ def main_loop():
                     if album_uri:
                         write_mode = True
                         pending_album_uri = album_uri
-                        flash_led_repeatedly(5, 0.3)
+                        GPIO.output(LED_PIN, GPIO.HIGH)
                         print("Ready to write to next tag presented")
                     else:
                         print("Cannot enter write mode - nothing playing or no album available")
