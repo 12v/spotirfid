@@ -13,7 +13,6 @@ LED_PIN = 18
 
 # Initialize RFID reader without IRQ
 rdr = RFID(pin_irq=None)
-GPIO.setmode(GPIO.BCM)
 GPIO.setup(LED_PIN, GPIO.OUT)
 
 
