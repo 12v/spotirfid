@@ -77,11 +77,6 @@ def flash_led_repeatedly(duration=5, rate=0.3):
         time.sleep(rate)
 
 
-flash_led(3, 0.5)
-
-GPIO.output(LED_PIN, GPIO.HIGH)
-
-
 def uid_to_str(uid_tuple):
     """Convert uid tuple/list to a single integer string (common style)."""
     return "".join(str(x) for x in uid_tuple)
@@ -177,6 +172,7 @@ def main_loop():
             print(f"Tag read: {uid_str}")
 
             if uid_str in TAG_MAP:
+                flash_led(2, 0.1)
                 spotify_uri = TAG_MAP[uid_str]
                 print(f"Mapped to {spotify_uri}. Triggering playback...")
 
@@ -222,7 +218,6 @@ def main_loop():
 
                 if ok:
                     print("Playback triggered.")
-                    flash_led(2, 0.5)
                 else:
                     print("Failed to start playback:", info)
             else:
