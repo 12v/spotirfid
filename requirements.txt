@@ -1,3 +1,4 @@
 mfrc522
 requests
 python-dotenv
+pi-rc522
