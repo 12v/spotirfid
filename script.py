@@ -12,6 +12,8 @@ from mfrc522 import SimpleMFRC522
 import sys
 import os
 from dotenv import load_dotenv
+import RPi.GPIO as GPIO
+import time
 
 sys.stdout.reconfigure(line_buffering=True)
 
@@ -51,6 +53,32 @@ TOKEN_URL = "https://accounts.spotify.com/api/token"
 # ----------------------------
 
 reader = SimpleMFRC522()
+
+LED_PIN = 24
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(LED_PIN, GPIO.OUT)
+
+
+def flash_led(times=1, delay=0.2):
+    """Flash LED a certain number of times (normal tag feedback)."""
+    for _ in range(times):
+        GPIO.output(LED_PIN, GPIO.HIGH)
+        time.sleep(delay)
+        GPIO.output(LED_PIN, GPIO.LOW)
+        time.sleep(delay)
+
+
+def flash_led_repeatedly(duration=5, rate=0.3):
+    """Flash LED repeatedly for duration seconds (write/program mode indicator)."""
+    end_time = time.time() + duration
+    while time.time() < end_time:
+        GPIO.output(LED_PIN, GPIO.HIGH)
+        time.sleep(rate)
+        GPIO.output(LED_PIN, GPIO.LOW)
+        time.sleep(rate)
+
+
+flash_led(3, 0.5)
 
 
 def uid_to_str(uid_tuple):
@@ -193,6 +221,7 @@ def main_loop():
 
                 if ok:
                     print("Playback triggered.")
+                    flash_led(2, 0.5)
                 else:
                     print("Failed to start playback:", info)
             else:
