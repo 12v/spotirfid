@@ -11,8 +11,8 @@ import time
 MASTER_IDENTIFIER = "MASTER_TAG"
 LED_PIN = 18
 
-GPIO.setup(LED_PIN, GPIO.OUT)
 reader = SimpleMFRC522()
+GPIO.setup(LED_PIN, GPIO.OUT)
 
 
 def flash_led(times=1, delay=0.2):
@@ -22,6 +22,7 @@ def flash_led(times=1, delay=0.2):
         time.sleep(delay)
         GPIO.output(LED_PIN, GPIO.LOW)
         time.sleep(delay)
+
 
 try:
     print("Place master tag on reader...")
