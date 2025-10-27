@@ -1,1 +1,4 @@
 .env
+.DS_store
+tag_map.json
+refresh_token.txt

@@ -250,7 +250,9 @@ def main_loop():
                         GPIO.output(LED_PIN, GPIO.HIGH)
                         print("Ready to write to next tag presented")
                     else:
-                        print("Cannot enter write mode - nothing playing or no album available")
+                        print(
+                            "Cannot enter write mode - nothing playing or no album available"
+                        )
                     time.sleep(1.0)
                 elif uid_str in TAG_MAP:
                     # Tag ID found in map - trigger playback
@@ -278,7 +280,9 @@ def main_loop():
                                     access_token, TARGET_DEVICE_NAME
                                 )
                                 if DEVICE_ID:
-                                    print(f"Found device, retrying with ID: {DEVICE_ID}")
+                                    print(
+                                        f"Found device, retrying with ID: {DEVICE_ID}"
+                                    )
                                     ok, info = start_playback(
                                         access_token, spotify_uri, DEVICE_ID
                                     )
