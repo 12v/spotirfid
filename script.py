@@ -79,6 +79,8 @@ def flash_led_repeatedly(duration=5, rate=0.3):
 
 flash_led(3, 0.5)
 
+GPIO.output(LED_PIN, GPIO.HIGH)
+
 
 def uid_to_str(uid_tuple):
     """Convert uid tuple/list to a single integer string (common style)."""
