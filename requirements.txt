@@ -1,4 +1,5 @@
 mfrc522
+nfcpy
 requests
 python-dotenv
 pi-rc522
