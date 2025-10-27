@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple test script to write and read tag data.
+Simple test script to write and read tag data with reset and diagnostics.
 """
 
 from mfrc522 import SimpleMFRC522
@@ -14,16 +14,20 @@ GPIO.setup(LED_PIN, GPIO.OUT)
 try:
     test_data = "spotify:album:test123"
 
-    print("Place tag on reader...")
+    print("Waiting for tag...")
     id, text = reader.read()
     print(f"Tag ID: {id}")
     print(f"Current text: '{text}'")
 
+    # Wait a bit for reader to settle
+    time.sleep(1)
+
     print(f"\nWriting: '{test_data}'")
     reader.write(test_data)
-    print("Write complete")
+    print("Write command sent")
 
-    time.sleep(1)
+    # Wait longer before reading back
+    time.sleep(2)
 
     print("Reading back...")
     id, text = reader.read()
@@ -36,6 +40,8 @@ try:
         GPIO.output(LED_PIN, GPIO.HIGH)
     else:
         print(f"✗ FAILED: Expected '{test_data}', got '{text_stripped}'")
+        print(f"  Length: {len(text_stripped)}")
+        print(f"  Repr: {repr(text_stripped)}")
 
 except Exception as e:
     print(f"Error: {e}")
