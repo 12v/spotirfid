@@ -4,7 +4,7 @@ Test script using nfcpy with MFRC522 SPI reader for NFC 213 tags.
 """
 
 import nfc
-from nfc.tag.tt2 import NdefMessage, TextRecord
+from ndef import NdefMessage, TextRecord
 
 def test_write():
     clf = None
