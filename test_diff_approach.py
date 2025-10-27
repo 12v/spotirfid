@@ -10,10 +10,11 @@ from pirc522 import RFID
 
 # Configuration
 LED_PIN = 18
-GPIO.setup(LED_PIN, GPIO.OUT)
 
 # Initialize RFID reader without IRQ pin
 rdr = RFID(pin_irq=None)
+
+GPIO.setup(LED_PIN, GPIO.OUT)
 
 
 def write_ntag213(tag_data, max_retries=3):
