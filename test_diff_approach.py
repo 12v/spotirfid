@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 """
-Detailed NTAG213 write test with retries and verification
+NTAG213 write with retries, verification, and LED feedback
+Using pi-rc522 without IRQ pin (polling mode)
 """
 
 import RPi.GPIO as GPIO
 import time
-from mfrc522 import MFRC522
+from pirc522 import RFID
 
+# Configuration
 LED_PIN = 18
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(LED_PIN, GPIO.OUT)
 
-GPIO.setwarnings(False)
-
-
-reader = MFRC522()
+# Initialize RFID reader without IRQ pin
+rdr = RFID(pin_irq=None)
 
 
 def write_ntag213(tag_data, max_retries=3):
     """
-    Write string tag_data to NTAG213 starting at page 4
+    Write a string to NTAG213 starting at page 4
     """
-    # Convert string to list of bytes, pad each 4-byte page
+    # Convert string to bytes and split into 4-byte pages
     data_bytes = [ord(c) for c in tag_data]
     pages = [data_bytes[i : i + 4] for i in range(0, len(data_bytes), 4)]
     for i in range(len(pages)):
@@ -31,23 +31,26 @@ def write_ntag213(tag_data, max_retries=3):
     for attempt in range(1, max_retries + 1):
         print(f"\n--- Write Attempt {attempt}/{max_retries} ---")
         print("Place NTAG213 near the reader...")
+
+        # Poll until a tag is detected
         while True:
-            (status, TagType) = reader.MFRC522_Request(reader.PICC_REQIDL)
-            if status == reader.MI_OK:
-                print("Tag detected")
-                (status, uid) = reader.MFRC522_Anticoll()
-                if status == reader.MI_OK:
+            rdr.wait_for_tag()
+            (error, tag_type) = rdr.request()
+            if not error:
+                (error, uid) = rdr.anticoll()
+                if not error:
                     print("Tag UID:", uid)
                     break
             time.sleep(0.2)
 
         success = True
-        # Write page by page
+
+        # Write page-by-page
         for idx, page_data in enumerate(pages):
             page_num = 4 + idx
             print(f"Writing page {page_num}: {page_data}")
-            status = reader.MFRC522_Write(page_num, page_data)
-            if status != reader.MI_OK:
+            error = rdr.write(page_num, page_data)
+            if error:
                 print(f"✗ Failed writing page {page_num}")
                 success = False
                 break
@@ -61,8 +64,8 @@ def write_ntag213(tag_data, max_retries=3):
         read_back = []
         for idx in range(len(pages)):
             page_num = 4 + idx
-            status, page = reader.MFRC522_Read(page_num)
-            if status != reader.MI_OK:
+            error, page = rdr.read(page_num)
+            if error:
                 print(f"✗ Failed reading page {page_num}")
                 success = False
                 break
