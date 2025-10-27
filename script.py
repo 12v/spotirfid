@@ -42,6 +42,7 @@ TAG_MAP = {
     "847216211447": "spotify:album:316O0Xetgx2NJLRgJBw4uq",
     "926375589018": "spotify:album:4CZCMvnmbjR6FkOAhzgmg3",
     "539431371257": "spotify:album:6hPt04r4KtO00nwhdGJ8Ox",
+    "588394784912": "spotify:album:5RUma3H9uzDLXxwT7JzTel",
 }
 
 # Token endpoint details
