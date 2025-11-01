@@ -59,6 +59,7 @@ def main_loop():
             print("Ready to scan, write_mode =", write_mode)
             tag_id, text = reader.read()
             uid_str = str(tag_id)
+            text = text.strip() if isinstance(text, str) else text
             print(f"Tag: {uid_str}, text: {text}")
 
             if text == MASTER_TAG_ID:
