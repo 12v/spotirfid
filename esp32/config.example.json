@@ -1,0 +1,19 @@
+{
+    "wifi": {
+        "ssid": "YOUR_WIFI_SSID",
+        "password": "YOUR_WIFI_PASSWORD"
+    },
+    "worker": {
+        "url": "https://your-worker.workers.dev/api/scan",
+        "readerId": "YOUR_READER_ID_FROM_generate_reader_id.py"
+    },
+    "masterTagId": "MASTER_TAG",
+    "ledPin": 2,
+    "rfid": {
+        "rst": 9,
+        "ss": 10,
+        "sck": 8,
+        "mosi": 7,
+        "miso": 6
+    }
+}
