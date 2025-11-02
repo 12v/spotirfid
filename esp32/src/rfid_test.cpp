@@ -28,7 +28,7 @@ void setup()
         abort();
     }
 
-    StaticJsonDocument<1024> doc;
+    JsonDocument doc;
     DeserializationError err = deserializeJson(doc, file);
     if (err)
     {

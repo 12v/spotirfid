@@ -39,7 +39,7 @@ bool loadConfig()
         return false;
     }
 
-    StaticJsonDocument<1024> doc;
+    JsonDocument doc;
     DeserializationError err = deserializeJson(doc, file);
     if (err)
     {
@@ -115,7 +115,7 @@ void callWorker(String tagId, bool isWriteMode)
     http.begin(config.worker_url);
     http.addHeader("Content-Type", "application/json");
 
-    StaticJsonDocument<256> body;
+    JsonDocument body;
     body["readerId"] = config.reader_id;
     body["tagId"] = tagId;
     body["isWriteMode"] = isWriteMode;
