@@ -80,10 +80,20 @@ void loop()
     }
     else
     {
-        textToWrite = "TEST_" + String(millis() / 1000);
-        Serial.print("Will write TEST DATA: \"");
+        // Test with realistic Spotify URI format (44 chars)
+        // Append timestamp to make it unique for testing
+        String timestamp = String(millis() / 1000);
+        textToWrite = "spotify:album:" + timestamp + "0Xetgx2NJLRgJBw4uq_test";
+        // Truncate to 48 chars max
+        if (textToWrite.length() > 48)
+        {
+            textToWrite = textToWrite.substring(0, 48);
+        }
+        Serial.print("Will write SPOTIFY URI: \"");
         Serial.print(textToWrite);
-        Serial.println("\"");
+        Serial.print("\" (");
+        Serial.print(textToWrite.length());
+        Serial.println(" chars)");
     }
     Serial.println("Keep card on reader...\n");
 

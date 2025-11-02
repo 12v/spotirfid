@@ -103,40 +103,90 @@ void connectWiFi()
 }
 
 
-void callWorker(String tagId, bool isWriteMode)
+void playAlbum(String albumId)
 {
     if (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("No Wi-Fi, skipping worker call.");
+        Serial.println("No Wi-Fi, skipping playback.");
         return;
     }
 
     HTTPClient http;
-    http.begin(config.worker_url);
+    String url = config.worker_url + "/api/play-album";
+    http.begin(url);
     http.addHeader("Content-Type", "application/json");
 
     JsonDocument body;
     body["readerId"] = config.reader_id;
-    body["tagId"] = tagId;
-    body["isWriteMode"] = isWriteMode;
+    body["albumId"] = albumId;
 
     String json;
     serializeJson(body, json);
-    Serial.println("POST: " + json);
+    Serial.println("POST " + url + ": " + json);
 
     int code = http.POST(json);
+
     if (code > 0)
     {
         String resp = http.getString();
         Serial.printf("Response [%d]: %s\n", code, resp.c_str());
         if (code == 200)
+        {
             flashLED(2, 100);
+        }
     }
     else
     {
         Serial.printf("HTTP error: %s\n", http.errorToString(code).c_str());
     }
     http.end();
+}
+
+String getCurrentAlbum()
+{
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        Serial.println("No Wi-Fi, cannot get current album.");
+        return "";
+    }
+
+    HTTPClient http;
+    String url = config.worker_url + "/api/current-album";
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+
+    JsonDocument body;
+    body["readerId"] = config.reader_id;
+
+    String json;
+    serializeJson(body, json);
+    Serial.println("POST " + url + ": " + json);
+
+    int code = http.POST(json);
+    String albumId = "";
+
+    if (code > 0)
+    {
+        String resp = http.getString();
+        Serial.printf("Response [%d]: %s\n", code, resp.c_str());
+
+        if (code == 200)
+        {
+            JsonDocument respDoc;
+            DeserializationError err = deserializeJson(respDoc, resp);
+            if (!err && respDoc["albumId"].is<String>())
+            {
+                albumId = respDoc["albumId"].as<String>();
+            }
+        }
+    }
+    else
+    {
+        Serial.printf("HTTP error: %s\n", http.errorToString(code).c_str());
+    }
+    http.end();
+
+    return albumId;
 }
 
 // ===== SETUP =====
@@ -163,7 +213,10 @@ void setup()
 void loop()
 {
     CardData card;
-    if (!readCard(rfid, &key, card))
+    // In write mode, keep card active for writing. Otherwise, auto-release.
+    bool cardRead = writeMode ? readCardKeepActive(rfid, &key, card) : readCard(rfid, &key, card);
+
+    if (!cardRead)
     {
         delay(50);
         return;
@@ -175,11 +228,53 @@ void loop()
         writeMode = true;
         digitalWrite(config.led_pin, HIGH);
     }
+    else if (writeMode)
+    {
+        // PROTECTION: Don't write to master tag!
+        if (card.text == config.master_tag_id)
+        {
+            Serial.println("Cannot write to master tag!");
+            writeMode = false;
+            digitalWrite(config.led_pin, LOW);
+            delay(1000);
+            return;
+        }
+
+        // Write mode: Get album ID from worker and write to tag
+        Serial.println("Write mode: Getting currently playing album...");
+        String albumId = getCurrentAlbum();
+
+        if (albumId.length() > 0)
+        {
+            Serial.print("Writing album ID to tag: ");
+            Serial.println(albumId);
+
+            if (writeTagText(rfid, &key, albumId))
+            {
+                Serial.println("Successfully wrote album ID to tag!");
+                flashLED(3, 100);
+            }
+            else
+            {
+                Serial.println("Failed to write to tag");
+            }
+        }
+
+        writeMode = false;
+        digitalWrite(config.led_pin, LOW);
+    }
     else
     {
+        // Normal mode: Play album ID from tag
         digitalWrite(config.led_pin, LOW);
-        callWorker(card.id, writeMode);
-        writeMode = false;
+        if (card.text.length() > 0)
+        {
+            playAlbum(card.text);
+        }
+        else
+        {
+            Serial.println("Tag is empty - no album to play");
+        }
     }
 
     delay(1000);

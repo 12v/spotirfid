@@ -12,16 +12,25 @@ interface ReaderConfig {
   name?: string;
 }
 
-interface ScanRequest {
+interface PlayAlbumRequest {
   readerId: string;
-  tagId: string;
-  isWriteMode: boolean;
+  albumId: string;
 }
 
-interface ScanResponse {
+interface CurrentAlbumRequest {
+  readerId: string;
+}
+
+interface PlayAlbumResponse {
   success: boolean;
-  action: 'play' | 'mapped' | 'error';
   message: string;
+}
+
+interface CurrentAlbumResponse {
+  success: boolean;
+  message: string;
+  albumId?: string;
+  albumName?: string;
 }
 
 interface SpotifyDevice {
@@ -47,42 +56,99 @@ export default {
     }
 
     const url = new URL(request.url);
-    if (url.pathname !== '/api/scan') {
-      return new Response('Not found', { status: 404 });
-    }
 
     try {
-      const body: ScanRequest = await request.json();
-      const result = await handleScan(body, env);
-      return Response.json(result);
+      if (url.pathname === '/api/play-album') {
+        const body: PlayAlbumRequest = await request.json();
+        const result = await handlePlayAlbum(body, env);
+        return Response.json(result);
+      } else if (url.pathname === '/api/current-album') {
+        const body: CurrentAlbumRequest = await request.json();
+        const result = await handleCurrentAlbum(body, env);
+        return Response.json(result);
+      } else {
+        return new Response('Not found', { status: 404 });
+      }
     } catch (error) {
-      console.error('Error handling scan:', error);
+      console.error('Error:', error);
       return Response.json({
         success: false,
-        action: 'error',
         message: error instanceof Error ? error.message : 'Unknown error'
-      } as ScanResponse, { status: 500 });
+      }, { status: 500 });
     }
   }
 };
 
-async function handleScan(req: ScanRequest, env: Env): Promise<ScanResponse> {
-  const { readerId, tagId, isWriteMode } = req;
+async function handlePlayAlbum(req: PlayAlbumRequest, env: Env): Promise<PlayAlbumResponse> {
+  const { readerId, albumId } = req;
 
   const readerConfig = await getReaderConfig(readerId, env);
   if (!readerConfig) {
     return {
       success: false,
-      action: 'error',
       message: 'Invalid reader ID'
     };
   }
 
-  if (isWriteMode) {
-    return await handleWriteMode(readerId, tagId, readerConfig, env);
-  } else {
-    return await handlePlayMode(readerId, tagId, readerConfig, env);
+  if (!albumId) {
+    return {
+      success: false,
+      message: 'No album ID provided'
+    };
   }
+
+  // Construct full Spotify URI from album ID
+  const spotifyUri = `spotify:album:${albumId}`;
+
+  const accessToken = await getAccessToken(readerConfig, env);
+  const deviceId = await findDeviceId(accessToken, readerConfig.targetDevice);
+
+  if (!deviceId) {
+    return {
+      success: false,
+      message: `Device "${readerConfig.targetDevice}" not found`
+    };
+  }
+
+  await startPlayback(accessToken, deviceId, spotifyUri);
+
+  return {
+    success: true,
+    message: `Playing ${spotifyUri}`
+  };
+}
+
+async function handleCurrentAlbum(req: CurrentAlbumRequest, env: Env): Promise<CurrentAlbumResponse> {
+  const { readerId } = req;
+
+  const readerConfig = await getReaderConfig(readerId, env);
+  if (!readerConfig) {
+    return {
+      success: false,
+      message: 'Invalid reader ID'
+    };
+  }
+
+  const accessToken = await getAccessToken(readerConfig, env);
+  const currentlyPlaying = await getCurrentlyPlaying(accessToken);
+
+  if (!currentlyPlaying?.item?.album?.uri) {
+    return {
+      success: false,
+      message: 'No album currently playing'
+    };
+  }
+
+  const albumUri = currentlyPlaying.item.album.uri;
+  const albumName = currentlyPlaying.item.album.name;
+  const albumId = albumUri.split(':')[2];
+
+  return {
+    success: true,
+    message: `Album: ${albumName}`,
+    albumId: albumId,
+    albumName: albumName
+  };
 }
 
 async function getReaderConfig(readerId: string, env: Env): Promise<ReaderConfig | null> {
@@ -97,65 +163,9 @@ async function getReaderConfig(readerId: string, env: Env): Promise<ReaderConfig
   }
 }
 
-async function handlePlayMode(readerId: string, tagId: string, readerConfig: ReaderConfig, env: Env): Promise<ScanResponse> {
-  const kvKey = `${readerId}:${tagId}`;
-  const spotifyUri = await env.TAG_MAP.get(kvKey);
-
-  if (!spotifyUri) {
-    return {
-      success: false,
-      action: 'error',
-      message: `Tag ${tagId} not mapped to any Spotify URI`
-    };
-  }
-
-  const accessToken = await getAccessToken(readerId, readerConfig, env);
-  const deviceId = await findDeviceId(accessToken, readerConfig.targetDevice);
-
-  if (!deviceId) {
-    return {
-      success: false,
-      action: 'error',
-      message: `Device "${readerConfig.targetDevice}" not found`
-    };
-  }
-
-  await startPlayback(accessToken, deviceId, spotifyUri);
-
-  return {
-    success: true,
-    action: 'play',
-    message: `Playing ${spotifyUri}`
-  };
-}
-
-async function handleWriteMode(readerId: string, tagId: string, readerConfig: ReaderConfig, env: Env): Promise<ScanResponse> {
-  const accessToken = await getAccessToken(readerId, readerConfig, env);
-  const currentlyPlaying = await getCurrentlyPlaying(accessToken);
-
-  if (!currentlyPlaying?.item?.album?.uri) {
-    return {
-      success: false,
-      action: 'error',
-      message: 'No album currently playing'
-    };
-  }
-
-  const albumUri = currentlyPlaying.item.album.uri;
-  const albumName = currentlyPlaying.item.album.name;
-
-  const kvKey = `${readerId}:${tagId}`;
-  await env.TAG_MAP.put(kvKey, albumUri);
-
-  return {
-    success: true,
-    action: 'mapped',
-    message: `Mapped tag ${tagId} to album: ${albumName}`
-  };
-}
-
-async function getAccessToken(readerId: string, readerConfig: ReaderConfig, env: Env): Promise<string> {
-  const cacheKey = `${readerId}:access_token`;
+async function getAccessToken(readerConfig: ReaderConfig, env: Env): Promise<string> {
+  // Use refresh token as cache key (unique per reader)
+  const cacheKey = `${readerConfig.refreshToken.substring(0, 20)}:access_token`;
   const cached = await env.TOKEN_CACHE.get(cacheKey);
   if (cached) {
     return cached;

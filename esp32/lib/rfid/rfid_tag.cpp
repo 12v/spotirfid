@@ -65,70 +65,82 @@ String readTagText(MFRC522 *rfid, MFRC522::MIFARE_Key *key)
 {
     MFRC522::PICC_Type piccType = rfid->PICC_GetType(rfid->uid.sak);
 
-    // MIFARE Ultralight/NTAG
+    // MIFARE Ultralight/NTAG - Read 48 bytes (pages 4-15)
     if (piccType == MFRC522::PICC_TYPE_MIFARE_UL)
     {
-        byte page = 4;
-        byte buffer[18];
-        byte size = sizeof(buffer);
-
-        MFRC522::StatusCode status = rfid->MIFARE_Read(page, buffer, &size);
-        if (status != MFRC522::STATUS_OK)
-        {
-            return "";
-        }
-
         String data = "";
-        for (byte i = 0; i < 16; i++)
+
+        // Read 12 pages (4 bytes each = 48 bytes total)
+        // MIFARE_Read returns 4 pages at a time
+        for (byte startPage = 4; startPage < 16; startPage += 4)
         {
-            if (buffer[i] >= 32 && buffer[i] <= 126)
+            byte buffer[18];
+            byte size = sizeof(buffer);
+
+            MFRC522::StatusCode status = rfid->MIFARE_Read(startPage, buffer, &size);
+            if (status != MFRC522::STATUS_OK)
             {
-                data += (char)buffer[i];
+                return data; // Return what we've read so far
             }
-            else if (buffer[i] == 0)
+
+            // Process 16 bytes (4 pages worth)
+            for (byte i = 0; i < 16; i++)
             {
-                break;
+                if (buffer[i] == 0)
+                {
+                    return data; // Null terminator found
+                }
+                if (buffer[i] >= 32 && buffer[i] <= 126)
+                {
+                    data += (char)buffer[i];
+                }
             }
         }
         return data;
     }
 
-    // MIFARE Classic
+    // MIFARE Classic - Read 48 bytes (blocks 4-6)
+    // Sector 1 has blocks 4-7, but block 7 is sector trailer (auth keys), so use 4-6
     if (piccType == MFRC522::PICC_TYPE_MIFARE_MINI ||
         piccType == MFRC522::PICC_TYPE_MIFARE_1K ||
         piccType == MFRC522::PICC_TYPE_MIFARE_4K)
     {
-        byte block = 4;
-        byte buffer[18];
-        byte size = sizeof(buffer);
-
-        MFRC522::StatusCode status = rfid->PCD_Authenticate(
-            MFRC522::PICC_CMD_MF_AUTH_KEY_A,
-            block,
-            key,
-            &rfid->uid);
-
-        if (status != MFRC522::STATUS_OK)
-        {
-            return "";
-        }
-
-        status = rfid->MIFARE_Read(block, buffer, &size);
-        if (status != MFRC522::STATUS_OK)
-        {
-            return "";
-        }
-
         String data = "";
-        for (byte i = 0; i < 16; i++)
+
+        // Read blocks 4, 5, 6 (16 bytes each = 48 bytes total)
+        for (byte block = 4; block <= 6; block++)
         {
-            if (buffer[i] >= 32 && buffer[i] <= 126)
+            byte buffer[18];
+            byte size = sizeof(buffer);
+
+            MFRC522::StatusCode status = rfid->PCD_Authenticate(
+                MFRC522::PICC_CMD_MF_AUTH_KEY_A,
+                block,
+                key,
+                &rfid->uid);
+
+            if (status != MFRC522::STATUS_OK)
             {
-                data += (char)buffer[i];
+                return data; // Return what we've read so far
             }
-            else if (buffer[i] == 0)
+
+            status = rfid->MIFARE_Read(block, buffer, &size);
+            if (status != MFRC522::STATUS_OK)
             {
-                break;
+                return data; // Return what we've read so far
+            }
+
+            // Process 16 bytes
+            for (byte i = 0; i < 16; i++)
+            {
+                if (buffer[i] == 0)
+                {
+                    return data; // Null terminator found
+                }
+                if (buffer[i] >= 32 && buffer[i] <= 126)
+                {
+                    data += (char)buffer[i];
+                }
             }
         }
         return data;
@@ -182,25 +194,26 @@ bool writeTagText(MFRC522 *rfid, MFRC522::MIFARE_Key *key, const String &text)
     Serial.print(text);
     Serial.println("\"");
 
-    byte buffer[16] = {0};
-    byte len = text.length() > 16 ? 16 : text.length();
+    byte buffer[48] = {0}; // Increased to 48 bytes
+    byte len = text.length() > 48 ? 48 : text.length();
     for (byte i = 0; i < len; i++)
     {
         buffer[i] = text[i];
     }
 
-    // MIFARE Ultralight/NTAG
+    // MIFARE Ultralight/NTAG - Write 48 bytes (pages 4-15)
     if (piccType == MFRC522::PICC_TYPE_MIFARE_UL)
     {
         Serial.print("Writing ");
         Serial.print(len);
-        Serial.println(" bytes to Ultralight card");
+        Serial.println(" bytes to Ultralight card (pages 4-15)");
 
-        byte page = 4;
-        for (byte p = 0; p < 4; p++)
+        // Write 12 pages (4 bytes each = 48 bytes total)
+        for (byte p = 0; p < 12; p++)
         {
+            byte page = 4 + p;
             Serial.print("Writing page ");
-            Serial.print(page + p);
+            Serial.print(page);
             Serial.print(" with data: ");
             for (byte i = 0; i < 4; i++)
             {
@@ -210,18 +223,18 @@ bool writeTagText(MFRC522 *rfid, MFRC522::MIFARE_Key *key, const String &text)
             }
             Serial.println();
 
-            MFRC522::StatusCode status = rfid->MIFARE_Ultralight_Write(page + p, buffer + (p * 4), 4);
+            MFRC522::StatusCode status = rfid->MIFARE_Ultralight_Write(page, buffer + (p * 4), 4);
             if (status != MFRC522::STATUS_OK)
             {
                 Serial.print("Write failed at page ");
-                Serial.print(page + p);
+                Serial.print(page);
                 Serial.print(": ");
                 Serial.println(rfid->GetStatusCodeName(status));
                 releaseCard(rfid);
                 return false;
             }
             Serial.print("Page ");
-            Serial.print(page + p);
+            Serial.print(page);
             Serial.println(" written successfully");
         }
         Serial.println("Write successful");
@@ -230,32 +243,46 @@ bool writeTagText(MFRC522 *rfid, MFRC522::MIFARE_Key *key, const String &text)
         return true;
     }
 
-    // MIFARE Classic
+    // MIFARE Classic - Write 48 bytes (blocks 4-6)
     if (piccType == MFRC522::PICC_TYPE_MIFARE_MINI ||
         piccType == MFRC522::PICC_TYPE_MIFARE_1K ||
         piccType == MFRC522::PICC_TYPE_MIFARE_4K)
     {
-        byte block = 4;
+        Serial.print("Writing ");
+        Serial.print(len);
+        Serial.println(" bytes to Classic card (blocks 4-6)");
 
-        MFRC522::StatusCode status = rfid->PCD_Authenticate(
-            MFRC522::PICC_CMD_MF_AUTH_KEY_A,
-            block,
-            key,
-            &rfid->uid);
-
-        if (status != MFRC522::STATUS_OK)
+        // Write blocks 4, 5, 6 (16 bytes each = 48 bytes total)
+        for (byte b = 0; b < 3; b++)
         {
-            Serial.println("Auth failed for write");
-            releaseCard(rfid);
-            return false;
-        }
+            byte block = 4 + b;
 
-        status = rfid->MIFARE_Write(block, buffer, 16);
-        if (status != MFRC522::STATUS_OK)
-        {
-            Serial.println("Write failed");
-            releaseCard(rfid);
-            return false;
+            MFRC522::StatusCode status = rfid->PCD_Authenticate(
+                MFRC522::PICC_CMD_MF_AUTH_KEY_A,
+                block,
+                key,
+                &rfid->uid);
+
+            if (status != MFRC522::STATUS_OK)
+            {
+                Serial.print("Auth failed for block ");
+                Serial.println(block);
+                releaseCard(rfid);
+                return false;
+            }
+
+            status = rfid->MIFARE_Write(block, buffer + (b * 16), 16);
+            if (status != MFRC522::STATUS_OK)
+            {
+                Serial.print("Write failed at block ");
+                Serial.println(block);
+                releaseCard(rfid);
+                return false;
+            }
+
+            Serial.print("Block ");
+            Serial.print(block);
+            Serial.println(" written successfully");
         }
 
         Serial.println("Write successful");
