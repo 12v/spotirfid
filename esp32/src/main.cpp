@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <SPIFFS.h>
 #include <MFRC522.h>
+#include "rfid_tag.h"
 
 // ===== STRUCTS =====
 struct Config
@@ -14,10 +15,10 @@ struct Config
     String reader_id;
     String master_tag_id;
     int led_pin;
-    int rst_pin, ss_pin, sck_pin, mosi_pin, miso_pin;
 };
 
 Config config;
+RFIDPins rfidPins;
 MFRC522 *rfid = nullptr;
 MFRC522::MIFARE_Key key;
 bool writeMode = false;
@@ -55,17 +56,18 @@ bool loadConfig()
     config.reader_id = doc["worker"]["readerId"].as<String>();
     config.master_tag_id = doc["masterTagId"].as<String>();
     config.led_pin = doc["ledPin"].as<int>();
-    config.rst_pin = doc["rfid"]["rst"].as<int>();
-    config.ss_pin = doc["rfid"]["ss"].as<int>();
-    config.sck_pin = doc["rfid"]["sck"].as<int>();
-    config.mosi_pin = doc["rfid"]["mosi"].as<int>();
-    config.miso_pin = doc["rfid"]["miso"].as<int>();
+
+    if (!parseRFIDConfig(doc["rfid"], rfidPins))
+    {
+        Serial.println("Failed to parse RFID config");
+        file.close();
+        return false;
+    }
 
     Serial.println("Loaded config:");
     Serial.println("  WiFi SSID: " + config.wifi_ssid);
     Serial.println("  Worker URL: " + config.worker_url);
     Serial.println("  Reader ID: " + config.reader_id);
-    Serial.printf("  RFID pins: SS=%d, RST=%d\n", config.ss_pin, config.rst_pin);
     return true;
 }
 
@@ -100,93 +102,6 @@ void connectWiFi()
     Serial.println(WiFi.localIP());
 }
 
-String uidToString(MFRC522::Uid *uid)
-{
-    String s = "";
-    for (byte i = 0; i < uid->size; i++)
-    {
-        s += String(uid->uidByte[i] < 0x10 ? "0" : "");
-        s += String(uid->uidByte[i], HEX);
-    }
-    s.toUpperCase();
-    return s;
-}
-
-String readTagText()
-{
-    MFRC522::PICC_Type piccType = rfid->PICC_GetType(rfid->uid.sak);
-
-    // MIFARE Ultralight/NTAG
-    if (piccType == MFRC522::PICC_TYPE_MIFARE_UL)
-    {
-        byte page = 4;
-        byte buffer[18];
-        byte size = sizeof(buffer);
-
-        MFRC522::StatusCode status = rfid->MIFARE_Read(page, buffer, &size);
-        if (status != MFRC522::STATUS_OK)
-        {
-            return "";
-        }
-
-        String data = "";
-        for (byte i = 0; i < 16; i++)
-        {
-            if (buffer[i] >= 32 && buffer[i] <= 126)
-            {
-                data += (char)buffer[i];
-            }
-            else if (buffer[i] == 0)
-            {
-                break;
-            }
-        }
-        return data;
-    }
-
-    // MIFARE Classic
-    if (piccType == MFRC522::PICC_TYPE_MIFARE_MINI ||
-        piccType == MFRC522::PICC_TYPE_MIFARE_1K ||
-        piccType == MFRC522::PICC_TYPE_MIFARE_4K)
-    {
-        byte block = 4;
-        byte buffer[18];
-        byte size = sizeof(buffer);
-
-        MFRC522::StatusCode status = rfid->PCD_Authenticate(
-            MFRC522::PICC_CMD_MF_AUTH_KEY_A,
-            block,
-            &key,
-            &rfid->uid);
-
-        if (status != MFRC522::STATUS_OK)
-        {
-            return "";
-        }
-
-        status = rfid->MIFARE_Read(block, buffer, &size);
-        if (status != MFRC522::STATUS_OK)
-        {
-            return "";
-        }
-
-        String data = "";
-        for (byte i = 0; i < 16; i++)
-        {
-            if (buffer[i] >= 32 && buffer[i] <= 126)
-            {
-                data += (char)buffer[i];
-            }
-            else if (buffer[i] == 0)
-            {
-                break;
-            }
-        }
-        return data;
-    }
-
-    return "";
-}
 
 void callWorker(String tagId, bool isWriteMode)
 {
@@ -231,23 +146,15 @@ void setup()
 
     if (!loadConfig())
     {
-        Serial.println("Using defaults or check SPIFFS upload.");
+        Serial.println("Failed to load config!");
+        abort();
     }
 
     pinMode(config.led_pin, OUTPUT);
 
     connectWiFi();
 
-    // Setup SPI for RFID
-    SPI.begin(config.sck_pin, config.miso_pin, config.mosi_pin, config.ss_pin);
-    rfid = new MFRC522(config.ss_pin, config.rst_pin);
-    rfid->PCD_Init();
-
-    // Set default MIFARE key
-    for (byte i = 0; i < 6; i++)
-    {
-        key.keyByte[i] = 0xFF;
-    }
+    rfid = createAndInitRFID(&key, rfidPins);
 
     Serial.println("RFID -> Cloudflare Worker ready.");
 }
@@ -255,23 +162,14 @@ void setup()
 // ===== MAIN LOOP =====
 void loop()
 {
-    if (!rfid->PICC_IsNewCardPresent() || !rfid->PICC_ReadCardSerial())
+    CardData card;
+    if (!readCard(rfid, &key, card))
     {
         delay(50);
         return;
     }
 
-    String tagId = uidToString(&rfid->uid);
-    Serial.println("Tag detected: " + tagId);
-
-    // Read tag text to check if it's the master tag
-    String tagText = readTagText();
-    if (tagText.length() > 0)
-    {
-        Serial.println("Tag text: " + tagText);
-    }
-
-    if (tagText == config.master_tag_id)
+    if (card.text == config.master_tag_id)
     {
         Serial.println("Master tag detected -> write mode");
         writeMode = true;
@@ -280,11 +178,9 @@ void loop()
     else
     {
         digitalWrite(config.led_pin, LOW);
-        callWorker(tagId, writeMode);
+        callWorker(card.id, writeMode);
         writeMode = false;
     }
 
-    rfid->PICC_HaltA();
-    rfid->PCD_StopCrypto1();
     delay(1000);
 }
