@@ -4,15 +4,15 @@
         "password": "YOUR_WIFI_PASSWORD"
     },
     "worker": {
-        "url": "https://your-worker.workers.dev/api/scan",
+        "url": "https://your-worker.workers.dev",
         "readerId": "YOUR_READER_ID_FROM_generate_reader_id.py"
     },
     "masterTagId": "MASTER_TAG",
-    "ledPin": 2,
+    "ledPin": 8,
     "rfid": {
         "rst": 9,
         "ss": 10,
-        "sck": 8,
+        "sck": 3,
         "mosi": 7,
         "miso": 6
     }
