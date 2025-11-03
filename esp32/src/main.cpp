@@ -85,21 +85,29 @@ void flashLED(int times, int delayMs)
 
 void connectWiFi()
 {
-    WiFi.begin(config.wifi_ssid.c_str(), config.wifi_pass.c_str());
-    Serial.print("Connecting to Wi-Fi");
-    int retries = 0;
     while (WiFi.status() != WL_CONNECTED)
     {
-        delay(500);
-        Serial.print(".");
-        if (++retries > 40)
+        Serial.println("Connecting to Wi-Fi...");
+        WiFi.begin(config.wifi_ssid.c_str(), config.wifi_pass.c_str());
+
+        int retries = 0;
+        while (WiFi.status() != WL_CONNECTED && retries < 40)
         {
-            Serial.println("\nWi-Fi failed!");
+            delay(500);
+            Serial.print(".");
+            retries++;
+        }
+
+        if (WiFi.status() == WL_CONNECTED)
+        {
+            Serial.println("\nWi-Fi connected!");
+            Serial.println(WiFi.localIP());
             return;
         }
+
+        Serial.println("\nWi-Fi connection failed, retrying in 5 seconds...");
+        delay(5000);
     }
-    Serial.println("\nConnected!");
-    Serial.println(WiFi.localIP());
 }
 
 
@@ -107,8 +115,8 @@ void playAlbum(String albumId)
 {
     if (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("No Wi-Fi, skipping playback.");
-        return;
+        Serial.println("Wi-Fi disconnected, attempting to reconnect...");
+        connectWiFi();
     }
 
     HTTPClient http;
@@ -146,8 +154,8 @@ String getCurrentAlbum()
 {
     if (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("No Wi-Fi, cannot get current album.");
-        return "";
+        Serial.println("Wi-Fi disconnected, attempting to reconnect...");
+        connectWiFi();
     }
 
     HTTPClient http;
@@ -206,7 +214,7 @@ void setup()
 
     rfid = createAndInitRFID(&key, rfidPins);
 
-    Serial.println("RFID -> Cloudflare Worker ready.");
+    Serial.println("System ready!");
 }
 
 // ===== MAIN LOOP =====
