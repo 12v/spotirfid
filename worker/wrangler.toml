@@ -7,10 +7,6 @@ binding = "READER_CONFIG"
 id = "0cf5aa0da26f4715bbe5db62d5548ec0"
 
 [[kv_namespaces]]
-binding = "TAG_MAP"
-id = "69740d9764b34ac7bb2118ededd0cffd"
-
-[[kv_namespaces]]
 binding = "TOKEN_CACHE"
 id = "a7e1b10df8894a49b937faa37532ef2f"
 

@@ -2,8 +2,7 @@ interface Env {
   SPOTIFY_CLIENT_ID: string;
   SPOTIFY_CLIENT_SECRET: string;
   READER_CONFIG: KVNamespace;
-  TAG_MAP: KVNamespace;
-  TOKEN_CACHE: KVNamespace;
+    TOKEN_CACHE: KVNamespace;
 }
 
 interface ReaderConfig {
