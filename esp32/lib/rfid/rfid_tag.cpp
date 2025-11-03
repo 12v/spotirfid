@@ -194,22 +194,34 @@ bool writeTagText(MFRC522 *rfid, MFRC522::MIFARE_Key *key, const String &text)
     Serial.print(text);
     Serial.println("\"");
 
-    byte buffer[48] = {0}; // Increased to 48 bytes
-    byte len = text.length() > 48 ? 48 : text.length();
-    for (byte i = 0; i < len; i++)
-    {
-        buffer[i] = text[i];
-    }
+    byte len = text.length();
+    if (len > 47) len = 47; // Max 47 chars + null terminator = 48 bytes
 
-    // MIFARE Ultralight/NTAG - Write 48 bytes (pages 4-15)
+    // MIFARE Ultralight/NTAG - Write minimum required pages
     if (piccType == MFRC522::PICC_TYPE_MIFARE_UL)
     {
+        // Calculate number of pages needed (4 bytes per page, round up to include null terminator)
+        byte numPages = (len + 1 + 3) / 4; // +1 for null terminator
+        if (numPages > 12) numPages = 12;
+
+        byte bufferSize = numPages * 4;
+        byte buffer[bufferSize];
+        memset(buffer, 0, bufferSize);
+
+        for (byte i = 0; i < len; i++)
+        {
+            buffer[i] = text[i];
+        }
+        // buffer[len] is already 0 from memset (null terminator)
+
         Serial.print("Writing ");
         Serial.print(len);
-        Serial.println(" bytes to Ultralight card (pages 4-15)");
+        Serial.print(" bytes to Ultralight card (");
+        Serial.print(numPages);
+        Serial.println(" pages)");
 
-        // Write 12 pages (4 bytes each = 48 bytes total)
-        for (byte p = 0; p < 12; p++)
+        // Write only the necessary pages
+        for (byte p = 0; p < numPages; p++)
         {
             byte page = 4 + p;
             Serial.print("Writing page ");
@@ -243,17 +255,33 @@ bool writeTagText(MFRC522 *rfid, MFRC522::MIFARE_Key *key, const String &text)
         return true;
     }
 
-    // MIFARE Classic - Write 48 bytes (blocks 4-6)
+    // MIFARE Classic - Write minimum required blocks
     if (piccType == MFRC522::PICC_TYPE_MIFARE_MINI ||
         piccType == MFRC522::PICC_TYPE_MIFARE_1K ||
         piccType == MFRC522::PICC_TYPE_MIFARE_4K)
     {
+        // Calculate number of blocks needed (16 bytes per block, round up to include null terminator)
+        byte numBlocks = (len + 1 + 15) / 16; // +1 for null terminator
+        if (numBlocks > 3) numBlocks = 3;
+
+        byte bufferSize = numBlocks * 16;
+        byte buffer[bufferSize];
+        memset(buffer, 0, bufferSize);
+
+        for (byte i = 0; i < len; i++)
+        {
+            buffer[i] = text[i];
+        }
+        // buffer[len] is already 0 from memset (null terminator)
+
         Serial.print("Writing ");
         Serial.print(len);
-        Serial.println(" bytes to Classic card (blocks 4-6)");
+        Serial.print(" bytes to Classic card (");
+        Serial.print(numBlocks);
+        Serial.println(" blocks)");
 
-        // Write blocks 4, 5, 6 (16 bytes each = 48 bytes total)
-        for (byte b = 0; b < 3; b++)
+        // Write only the necessary blocks
+        for (byte b = 0; b < numBlocks; b++)
         {
             byte block = 4 + b;
 
