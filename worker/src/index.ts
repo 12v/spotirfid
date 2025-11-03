@@ -2,7 +2,7 @@ interface Env {
   SPOTIFY_CLIENT_ID: string;
   SPOTIFY_CLIENT_SECRET: string;
   READER_CONFIG: KVNamespace;
-    TOKEN_CACHE: KVNamespace;
+  TOKEN_CACHE: KVNamespace;
 }
 
 interface ReaderConfig {
@@ -99,7 +99,7 @@ async function handlePlayAlbum(req: PlayAlbumRequest, env: Env): Promise<PlayAlb
   // Construct full Spotify URI from album ID
   const spotifyUri = `spotify:album:${albumId}`;
 
-  const accessToken = await getAccessToken(readerConfig, env);
+  const accessToken = await getAccessToken(readerId, readerConfig, env);
   const deviceId = await findDeviceId(accessToken, readerConfig.targetDevice);
 
   if (!deviceId) {
@@ -128,7 +128,7 @@ async function handleCurrentAlbum(req: CurrentAlbumRequest, env: Env): Promise<C
     };
   }
 
-  const accessToken = await getAccessToken(readerConfig, env);
+  const accessToken = await getAccessToken(readerId, readerConfig, env);
   const currentlyPlaying = await getCurrentlyPlaying(accessToken);
 
   if (!currentlyPlaying?.item?.album?.uri) {
@@ -162,9 +162,8 @@ async function getReaderConfig(readerId: string, env: Env): Promise<ReaderConfig
   }
 }
 
-async function getAccessToken(readerConfig: ReaderConfig, env: Env): Promise<string> {
-  // Use refresh token as cache key (unique per reader)
-  const cacheKey = `${readerConfig.refreshToken.substring(0, 20)}:access_token`;
+async function getAccessToken(readerId: string, readerConfig: ReaderConfig, env: Env): Promise<string> {
+  const cacheKey = `${readerId}:access_token`;
   const cached = await env.TOKEN_CACHE.get(cacheKey);
   if (cached) {
     return cached;
